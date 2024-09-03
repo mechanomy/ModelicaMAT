@@ -273,7 +273,7 @@ Is an n x 4 integer matrix containing information for each variable (in the same
   dataInfo(i,4) is -1 in OpenModelica to signify that the value is not defined outside the time range. 0 keeps the first/last value when going outside the time range and 1 performs linear interpolation on the first/last two points.
 """
 function readDataInfo(ac::Aclass, vd::VariableDescriptions)
-   open(ac.filepath, "r") do matio
+  open(ac.filepath, "r") do matio
     seek(matio, vd.positionEnd) #this follows the VariableNames matrix
     startP = position(matio)
 
@@ -384,11 +384,22 @@ function readVariable(ac::Aclass, vn::VariableNames, vd::VariableDescriptions, d
       if di.info[varInd]["isWithinTimeRange"]== 0 #linear interpolation
         #data format is: time(tInitial), var1(tI), ... varN(tI), time(tFinal), var1(tF), ... varN(tF)
         readns = Vector{mh1.format}(undef, mh1.nCols)
-        for ind = 1:mh1.nCols
-          seek(matio, data1MatrixStart + (di.info[varInd]["indexInData"]-1)*typeBytes(mh1.format) + ((ind-1)*mh1.nRows*typeBytes(mh1.format)) )
-          readns[ind] = read(matio, mh1.format)
+
+        # sometimes the index is negated, implying that this variable is the negative of some other one
+        if di.info[varInd]["indexInData"] > 0 # a regular positive reference
+          for ind = 1:mh1.nCols
+            seek(matio, data1MatrixStart + (di.info[varInd]["indexInData"]-1)*typeBytes(mh1.format) + ((ind-1)*mh1.nRows*typeBytes(mh1.format)) )
+            readns[ind] = read(matio, mh1.format)
+          end
+          return readns
+
+        else # a negative reference
+          for ind = 1:mh1.nCols
+            seek(matio, data1MatrixStart + (di.info[varInd]["indexInData"]*-1 -1)*typeBytes(mh1.format) + ((ind-1)*mh1.nRows*typeBytes(mh1.format)) )
+            readns[ind] = read(matio, mh1.format) * -1 # apply the negation
+          end
+          return readns
         end
-        return readns
       end
 
     elseif name == "Time" || name == "time" || di.info[varInd]["locatedInData"] == 2 #data_2
@@ -396,13 +407,24 @@ function readVariable(ac::Aclass, vn::VariableNames, vd::VariableDescriptions, d
       if ac.isTranspose == false
         # data is sequential: time(t0), var1(t0), var2(t0),... varN(t0), time(t1), var1(t1),...
         readns = Vector{mh2.format}(undef, mh2.nCols)
-        for ind = 1:mh2.nCols
-          seek(matio, data2MatrixStart + (di.info[varInd]["indexInData"]-1)*typeBytes(mh2.format) + ((ind-1)*mh2.nRows*typeBytes(mh2.format)) )
-          readns[ind] = read(matio, mh2.format)
+
+        # sometimes the index is negated, implying that this variable is the negative of some other one
+        if di.info[varInd]["indexInData"] > 0 
+          for ind = 1:mh2.nCols
+            seek(matio, data2MatrixStart + (di.info[varInd]["indexInData"]-1)*typeBytes(mh2.format) + ((ind-1)*mh2.nRows*typeBytes(mh2.format)) )
+            readns[ind] = read(matio, mh2.format)
+          end
+          return readns
+        
+        else # a negative reference
+          for ind = 1:mh2.nCols
+            seek(matio, data2MatrixStart + (di.info[varInd]["indexInData"]*-1 -1)*typeBytes(mh2.format) + ((ind-1)*mh2.nRows*typeBytes(mh2.format)) )
+            readns[ind] = read(matio, mh2.format) * -1 # apply the negation
+          end
+          return readns
         end
-        return readns
       else
-        throw(ErrorException("reading binTranspose not implemented, lack test data") )
+        throw(ErrorException("reading binTranspose not implemented for lack of test data") )
       end
     else
       throw(ErrorException("variable [$name] is located in an unknown location") )
@@ -473,7 +495,26 @@ function readVariables(filepath::String, names::AbstractVector{T}) where T<:Abst
   return data
 end
 
+# getVariablesDescriptions( .. ) :: [Variables(.name, .description, .time, .data)] 
 
+# readVariablesOf(filepath::String, parentName::String) :: Dict of the results
+
+"""
+Dumps the DataInfo matrix to a csv file
+"""
+function dumpDataInfoToCSV(filepath::String, csvName="dataInfo.csv")
+  ac = readAclass(filepath)
+  vn = readVariableNames(ac)
+  vd = readVariableDescriptions(ac,vn)
+  di = readDataInfo(ac,vd)
+  open(csvName,"w") do fid
+    for (i,d) in enumerate(di.info)
+      str = "$i;" * d["name"] * ";" * string(d["indexInData"]) * ";" * string(d["isInterpolated"]) *";" * string(d["isWithinTimeRange"]) *";" * string(d["locatedInData"]) *";" * d["description"] * "\n"
+      write(fid, str)
+    end
+  end
+  println("dumpDataInfoToCSV() wrote $csvName")
+end
 
 end #ModelicaMAT
 

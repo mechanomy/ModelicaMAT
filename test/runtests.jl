@@ -16,6 +16,9 @@
 bbOM = joinpath(@__DIR__, "BouncingBall","BouncingBall_om1.19.0.mat")
 fbbOM = joinpath(@__DIR__, "FallingBodyBox","FallingBodyBox_om1.19.0.mat")
 
+#OpenModelica v1.21.0
+wcOM = joinpath(@__DIR__, "WebCutter","WebCutter_om1.21.0.mat")
+
 #Dymola v2021
 bbDy = joinpath(@__DIR__, "BouncingBall","BouncingBall_dymola2021.mat")
 fbbDy = joinpath(@__DIR__, "FallingBodyBox","FallingBodyBox_dymola2021.mat")
@@ -134,12 +137,13 @@ end
 end
 
 @testset "all-in-one readVariables" begin
-  data = ModelicaMAT.readVariables(fbbOM, ["bodyBox.frame_a.r_0[1]","bodyBox.frame_a.R.T[1,1]", "world.animateGravity"] )
+  data = ModelicaMAT.readVariables(fbbOM, ["bodyBox.frame_a.r_0[1]","bodyBox.frame_a.r_0[2]","bodyBox.frame_a.r_0[3]","bodyBox.frame_a.R.T[1,1]", "world.animateGravity"] )
   @test isapprox(data["bodyBox.frame_a.r_0[1]"][16], 0.002923239, rtol=1e-3)
+  @test isapprox(data["bodyBox.frame_a.r_0[2]"][16], -0.00432883, rtol=1e-3)
+  @test isapprox(data["bodyBox.frame_a.r_0[3]"][16], -6.2115e-5, rtol=1e-3)
   @test isapprox(data["bodyBox.frame_a.R.T[1,1]"][26], 0.983794001, rtol=1e-3)
   @test isapprox(data["world.animateGravity"][1], 1.0, rtol=1e-3) #this constant of length 2 is filled across dataframe's time
 end
-
 
 @testset "readVariable: BouncingBall Dymola" begin
   ac = ModelicaMAT.readAclass(bbDy)
@@ -232,4 +236,19 @@ end
 
   var = ModelicaMAT.readVariable(ac, vn, vd, di, "world.animateGravity") 
   @test isapprox(var[1], 1.0, rtol=1e-3)
+end
+
+@testset "readVariable: WebCutter OpenModelica" begin
+  # check negative indexInData, this does not occur in BouncingBall or FallingBodyBox
+  # for instance, "webModel.frame_a.f[1] has dataInfo: 3339;webModel.frame_a.f[1];-342;0;0;2;Cut-force resolved in connector frame [N]
+  # ModelicaMAT.dumpDataInfoToCSV(wcOM, "test/WebCutter/WebCutter_dataInfo.csv")
+
+  # use the step change at t=4.36s for point-checks:
+  webModel = ModelicaMAT.readVariables(wcOM, ["webModel.frame_a.f[1]", "webModel.frame_a.f[2]","webModel.frame_a.f[3]"] ) 
+  # for (i,t) in enumerate(webModel["time"])
+  #   println("$i: $t ", webModel["webModel.frame_a.f[1]"][i], webModel["webModel.frame_a.f[2]"][i], webModel["webModel.frame_a.f[3]"][i])
+  # end
+  @test isapprox(webModel["webModel.frame_a.f[1]"][219], 0.17762, rtol=1e-3)
+  @test isapprox(webModel["webModel.frame_a.f[2]"][219], 0.27589, rtol=1e-3)
+  @test isapprox(webModel["webModel.frame_a.f[3]"][219], 0.0, rtol=1e-3)
 end
